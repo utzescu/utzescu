@@ -1,0 +1,985 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code token usage</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --good: #006300;
+    --critical: #d03b3b;
+    --hover: rgba(11, 11, 11, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --good: #0ca30c;
+      --critical: #d03b3b;
+      --hover: rgba(255, 255, 255, 0.06);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+    --hover: rgba(255, 255, 255, 0.06);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--plane);
+    color: var(--text-primary);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 20px 64px; }
+
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { margin: 0; color: var(--text-secondary); font-size: 13px; }
+  .btn {
+    font: inherit; color: var(--text-secondary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  .btn:hover { background: var(--hover); }
+  .btn[aria-pressed="true"], .btn.on { color: var(--text-primary); border-color: var(--axis); font-weight: 600; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 20px; }
+  .segment { display: flex; gap: 4px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .segment .btn { border: 0; background: transparent; border-radius: 7px; padding: 5px 11px; }
+  .segment .btn[aria-pressed="true"] { background: var(--hover); }
+  label.field { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 13px; }
+  select {
+    font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; max-width: 260px;
+  }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 20px 14px; margin-bottom: 16px; position: relative;
+  }
+  .card h2 { font-size: 14px; font-weight: 600; margin: 0; }
+  .card .note { font-size: 12px; color: var(--muted); margin: 2px 0 12px; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+
+  .hero { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 28px; }
+  .hero .figure { font-size: 52px; font-weight: 600; line-height: 1.05; letter-spacing: -0.02em; }
+  .hero .label { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+  .hero .spark { flex: 1 1 220px; min-width: 200px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+  .tile .label { font-size: 12px; color: var(--text-secondary); }
+  .tile .value { font-size: 24px; font-weight: 600; margin-top: 4px; letter-spacing: -0.01em; }
+  .tile .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .delta.up { color: var(--critical); }
+  .delta.down { color: var(--good); }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  .grid2 .card { margin-bottom: 16px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 6px; padding: 0; list-style: none; font-size: 12px; color: var(--text-secondary); }
+  .legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .legend-btn {
+    font: inherit; font-size: 12px; color: var(--text-secondary); background: none; border: 0;
+    padding: 2px 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .legend-btn[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+  .legend-btn:hover { color: var(--text-primary); }
+
+  .plot { width: 100%; position: relative; }
+  .plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .tip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--axis); border-radius: 10px;
+    padding: 8px 10px; font-size: 12px; color: var(--text-secondary);
+    box-shadow: 0 6px 20px rgba(0,0,0,.12); min-width: 150px; z-index: 5;
+  }
+  .tip .t-title { color: var(--text-primary); font-weight: 600; margin-bottom: 5px; }
+  .tip .t-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .tip .t-key { display: inline-flex; align-items: center; gap: 6px; }
+  .tip .t-line { width: 12px; height: 2px; border-radius: 2px; display: inline-block; }
+  .tip .t-val { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tip .t-foot { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--grid); }
+
+  .tablewrap { overflow: auto; max-height: 420px; border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 7px 10px; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { position: sticky; top: 0; background: var(--surface-1); color: var(--text-secondary); font-weight: 600; z-index: 1; }
+  tbody tr:hover { background: var(--hover); }
+  td.dim { color: var(--text-secondary); }
+  .trunc { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+  footer { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; }
+  footer code { font-size: 11px; }
+  .empty { color: var(--text-secondary); padding: 28px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Claude Code token usage</h1>
+      <p class="sub" id="meta"></p>
+    </div>
+    <button class="btn" id="theme" type="button">Dark</button>
+  </header>
+
+  <div class="filters">
+    <div class="segment" id="ranges" role="group" aria-label="Date range"></div>
+    <label class="field">Model <select id="model"></select></label>
+    <label class="field">Project <select id="project"></select></label>
+  </div>
+
+  <section class="card">
+    <div class="hero">
+      <div>
+        <div class="label" id="hero-label">Estimated spend</div>
+        <div class="figure" id="hero-value">—</div>
+        <div class="sub" id="hero-meta"></div>
+      </div>
+      <div class="spark plot" id="hero-spark"></div>
+    </div>
+  </section>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Tokens over time</h2>
+        <p class="note" id="stack-note">Stacked by token type.</p>
+      </div>
+    </div>
+    <ul class="legend" id="stack-legend"></ul>
+    <div class="plot" id="stack"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Cost per period</h2>
+      <p class="note">Estimated, at the rates in pricing.json.</p>
+      <div class="plot" id="costbars"></div>
+    </section>
+    <section class="card">
+      <h2>Cumulative cost</h2>
+      <p class="note">Running total across the selected range.</p>
+      <div class="plot" id="cumulative"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>By model</h2>
+      <p class="note">Total tokens; cost and share on hover.</p>
+      <div class="plot" id="bymodel"></div>
+    </section>
+    <section class="card">
+      <h2>By project</h2>
+      <p class="note">Total tokens per working directory.</p>
+      <div class="plot" id="byproject"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Time of day</h2>
+    <p class="note">Tokens by hour, summed over the selected range.</p>
+    <div class="plot" id="byhour"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Daily detail</h2>
+      <button class="btn" id="copy" type="button">Copy TSV</button>
+    </div>
+    <p class="note">Every number in the charts above, in full.</p>
+    <div class="tablewrap"><table id="daily"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Sessions</h2>
+    <p class="note">Newest first.</p>
+    <div class="tablewrap"><table id="sessions"></table></div>
+  </section>
+
+  <footer id="footnote"></footer>
+</div>
+
+<script>
+const DATA = /*__USAGE_DATA__*/null;
+
+/* ---------------------------------------------------------------- helpers */
+const SERIES = [
+  { key: "i",  name: "Input",       varname: "--series-1" },
+  { key: "o",  name: "Output",      varname: "--series-2" },
+  { key: "cw", name: "Cache write", varname: "--series-3" },
+  { key: "cr", name: "Cache read",  varname: "--series-4" },
+];
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+function fmtCompact(n) {
+  const a = Math.abs(n);
+  if (a >= 1e9) return (n / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+  if (a >= 1e3) return (n / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "K";
+  return String(Math.round(n));
+}
+function fmtMoney(n) {
+  const a = Math.abs(n);
+  if (a >= 1000) return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (a >= 1) return "$" + n.toFixed(2);
+  if (a === 0) return "$0.00";
+  return "$" + n.toFixed(a < 0.01 ? 4 : 3);
+}
+const pad = (n) => String(n).padStart(2, "0");
+const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const parseDay = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const shiftDays = (s, n) => { const d = parseDay(s); d.setDate(d.getDate() + n); return dayKey(d); };
+function labelDay(s, grain) {
+  const d = parseDay(s);
+  const short = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (grain === "month") return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  return short;
+}
+const el = (tag, attrs, parent) => {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(node);
+  return node;
+};
+const text = (s) => document.createTextNode(s);
+
+/* ------------------------------------------------------------------ state */
+const RANGES = [
+  { id: "7",   label: "7d" },
+  { id: "30",  label: "30d" },
+  { id: "90",  label: "90d" },
+  { id: "365", label: "1y" },
+  { id: "all", label: "All" },
+];
+const state = { range: "30", model: "all", project: "all", hidden: new Set() };
+const visibleSeries = () => SERIES.filter((s) => !state.hidden.has(s.key));
+const allDays = [...new Set(DATA.buckets.map((b) => b.d))].sort();
+const lastDay = allDays[allDays.length - 1];
+const firstDay = allDays[0];
+
+function activeCutoff(range) {
+  if (range === "all") return firstDay;
+  const span = Number(range);
+  const fromToday = shiftDays(dayKey(new Date()), -(span - 1));
+  return fromToday > firstDay ? fromToday : firstDay;
+}
+
+function slice(range) {
+  const from = activeCutoff(range);
+  const to = lastDay > dayKey(new Date()) ? lastDay : dayKey(new Date());
+  const rows = DATA.buckets.filter((b) =>
+    b.d >= from && b.d <= to &&
+    (state.model === "all" || b.m === state.model) &&
+    (state.project === "all" || b.p === state.project));
+  return { from, to, rows };
+}
+
+function totals(rows) {
+  const t = { n: 0, i: 0, o: 0, cw: 0, cr: 0, th: 0, c: 0, tokens: 0 };
+  for (const b of rows) {
+    t.n += b.n; t.i += b.i; t.o += b.o; t.cw += b.cw; t.cr += b.cr; t.th += b.th; t.c += b.c;
+  }
+  t.tokens = t.i + t.o + t.cw + t.cr;
+  return t;
+}
+
+/* Group buckets into an evenly spaced time series, gaps filled with zeroes. */
+function timeSeries(rows, from, to) {
+  const dayCount = Math.round((parseDay(to) - parseDay(from)) / 86400000) + 1;
+  const grain = dayCount > 400 ? "month" : dayCount > 92 ? "week" : "day";
+  const bucketOf = (d) => {
+    if (grain === "day") return d;
+    if (grain === "week") { const x = parseDay(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return dayKey(x); }
+    return d.slice(0, 7) + "-01";
+  };
+  const keys = [];
+  let cursor = bucketOf(from);
+  const end = bucketOf(to);
+  let guard = 0;
+  while (cursor <= end && guard++ < 4000) {
+    keys.push(cursor);
+    const d = parseDay(cursor);
+    if (grain === "day") d.setDate(d.getDate() + 1);
+    else if (grain === "week") d.setDate(d.getDate() + 7);
+    else d.setMonth(d.getMonth() + 1);
+    cursor = dayKey(d);
+  }
+  const map = new Map(keys.map((k) => [k, { key: k, n: 0, i: 0, o: 0, cw: 0, cr: 0, c: 0 }]));
+  for (const b of rows) {
+    const slot = map.get(bucketOf(b.d));
+    if (!slot) continue;
+    slot.n += b.n; slot.i += b.i; slot.o += b.o; slot.cw += b.cw; slot.cr += b.cr; slot.c += b.c;
+  }
+  return { grain, points: keys.map((k) => map.get(k)) };
+}
+
+function groupBy(rows, field) {
+  const m = new Map();
+  for (const b of rows) {
+    let g = m.get(b[field]);
+    if (!g) m.set(b[field], (g = { key: b[field], tokens: 0, cost: 0, calls: 0 }));
+    g.tokens += b.i + b.o + b.cw + b.cr;
+    g.cost += b.c;
+    g.calls += b.n;
+  }
+  return [...m.values()].sort((a, b) => b.tokens - a.tokens);
+}
+
+/* ------------------------------------------------------------- chart core */
+function frame(host, height, pad) {
+  host.textContent = "";
+  const width = Math.max(host.clientWidth || 640, 260);
+  const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img" }, host);
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  host.appendChild(tip);
+  const plot = { w: width - pad.l - pad.r, h: height - pad.t - pad.b, x0: pad.l, y0: pad.t };
+  return { svg, tip, plot, width, height };
+}
+
+function showTip(host, tip, x, y, html) {
+  tip.textContent = "";
+  tip.appendChild(html);
+  tip.style.opacity = "1";
+  const box = tip.getBoundingClientRect();
+  const max = host.clientWidth - box.width - 4;
+  tip.style.left = Math.max(0, Math.min(x + 14, max)) + "px";
+  tip.style.top = Math.max(0, y - box.height - 12) + "px";
+}
+const hideTip = (tip) => { tip.style.opacity = "0"; };
+
+function tipNode(title, rows, foot) {
+  const box = document.createElement("div");
+  const h = document.createElement("div");
+  h.className = "t-title";
+  h.appendChild(text(title));
+  box.appendChild(h);
+  for (const r of rows) {
+    if (r.value === 0 && r.skipZero) continue;
+    const line = document.createElement("div");
+    line.className = "t-row";
+    const key = document.createElement("span");
+    key.className = "t-key";
+    if (r.color) {
+      const k = document.createElement("span");
+      k.className = "t-line";
+      k.style.background = r.color;
+      key.appendChild(k);
+    }
+    key.appendChild(text(r.name));
+    const val = document.createElement("span");
+    val.className = "t-val";
+    val.appendChild(text(r.text));
+    line.appendChild(key);
+    line.appendChild(val);
+    box.appendChild(line);
+  }
+  if (foot) {
+    const f = document.createElement("div");
+    f.className = "t-row t-foot";
+    const k = document.createElement("span");
+    k.appendChild(text(foot.name));
+    const v = document.createElement("span");
+    v.className = "t-val";
+    v.appendChild(text(foot.text));
+    f.appendChild(k); f.appendChild(v);
+    box.appendChild(f);
+  }
+  return box;
+}
+
+/* Ticks always reach at or above `max`, so no mark can exceed the top gridline. */
+function niceTicks(max, count) {
+  if (!(max > 0)) return [0, 1];
+  const raw = max / Math.max(1, count);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+  const steps = Math.max(1, Math.ceil(max / step - 1e-9));
+  return Array.from({ length: steps + 1 }, (_, i) => i * step);
+}
+
+function axes(g, plot, ticks, fmt) {
+  const top = ticks[ticks.length - 1] || 1;
+  for (const t of ticks) {
+    const y = plot.y0 + plot.h - (t / top) * plot.h;
+    el("line", { x1: plot.x0, x2: plot.x0 + plot.w, y1: y, y2: y,
+                 stroke: t === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, g);
+    const label = el("text", { x: plot.x0 - 8, y: y + 4, "text-anchor": "end",
+                               fill: css("--muted"), "font-size": 11 }, g);
+    label.appendChild(text(fmt(t)));
+  }
+  return top;
+}
+
+function xLabels(g, plot, points, grain, band) {
+  const last = points.length - 1;
+  const stride = Math.max(1, Math.ceil(points.length / Math.max(2, Math.floor(plot.w / 78))));
+  points.forEach((p, idx) => {
+    /* label from the right so the most recent period always carries a tick */
+    if ((last - idx) % stride !== 0) return;
+    if (idx !== last && last - idx < stride) return;
+    const x = plot.x0 + band * (idx + 0.5);
+    const t = el("text", { x, y: plot.y0 + plot.h + 16, "text-anchor": "middle",
+                           fill: css("--muted"), "font-size": 11 }, g);
+    t.appendChild(text(labelDay(p.key, grain)));
+  });
+}
+
+/* --------------------------------------------------------- stacked columns */
+function stackedChart(host, points, grain) {
+  const { svg, tip, plot } = frame(host, 300, { l: 54, r: 12, t: 12, b: 30 });
+  if (!points.length) return;
+  const shown = visibleSeries();
+  const colorOf = (s) => css(s.varname);
+  const sum = (p) => shown.reduce((acc, s) => acc + p[s.key], 0);
+  const max = Math.max(...points.map(sum), 1);
+  const ticks = niceTicks(max, 4);
+  const top = axes(svg, plot, ticks, fmtCompact);
+  const band = plot.w / points.length;
+  const barW = Math.min(24, Math.max(2, band - (band > 6 ? 3 : 1)));
+
+  points.forEach((p, idx) => {
+    const cx = plot.x0 + band * (idx + 0.5);
+    let acc = 0;
+    const total = sum(p);
+    shown.forEach((s, si) => {
+      const v = p[s.key];
+      if (v <= 0) return;
+      const h = (v / top) * plot.h;
+      const gap = h > 4 && si < shown.length - 1 ? 2 : 0;
+      const y = plot.y0 + plot.h - ((acc + v) / top) * plot.h;
+      el("rect", { x: cx - barW / 2, y: y + gap, width: barW, height: Math.max(1, h - gap),
+                   fill: colorOf(s), rx: si === shown.length - 1 ? Math.min(4, barW / 2) : 0 }, svg);
+      acc += v;
+    });
+    const hit = el("rect", { x: plot.x0 + band * idx, y: plot.y0, width: band, height: plot.h,
+                             fill: "transparent" }, svg);
+    hit.addEventListener("pointerenter", () => {
+      el("rect", { x: plot.x0 + band * idx, y: plot.y0, width: band, height: plot.h,
+                   fill: css("--hover"), class: "hl", "pointer-events": "none" }, svg);
+      svg.appendChild(hit);
+    });
+    hit.addEventListener("pointermove", (ev) => {
+      const r = host.getBoundingClientRect();
+      showTip(host, tip, ev.clientX - r.left, ev.clientY - r.top, tipNode(
+        labelDay(p.key, grain) + (grain === "week" ? " (week)" : grain === "month" ? " (month)" : ""),
+        total > 0
+          ? shown.map((s) => ({ name: s.name, color: colorOf(s), value: p[s.key],
+                                text: fmtInt(p[s.key]), skipZero: true }))
+          : [{ name: "No usage", value: 1, text: "—" }],
+        total > 0 ? { name: "Total · " + p.n + " calls", text: fmtInt(total) } : null));
+    });
+    hit.addEventListener("pointerleave", () => {
+      hideTip(tip);
+      svg.querySelectorAll(".hl").forEach((n) => n.remove());
+    });
+  });
+  xLabels(svg, plot, points, grain, band);
+}
+
+/* --------------------------------------------------- single-series columns */
+function columnChart(host, points, grain, valueOf, fmt, colorVar) {
+  const { svg, tip, plot } = frame(host, 220, { l: 54, r: 12, t: 12, b: 30 });
+  if (!points.length) return;
+  const color = css(colorVar || "--series-1");
+  const max = Math.max(...points.map(valueOf), 0.000001);
+  const ticks = niceTicks(max, 3);
+  const top = axes(svg, plot, ticks, fmt);
+  const band = plot.w / points.length;
+  const barW = Math.min(24, Math.max(2, band - (band > 6 ? 3 : 1)));
+  points.forEach((p, idx) => {
+    const v = valueOf(p);
+    const cx = plot.x0 + band * (idx + 0.5);
+    if (v > 0) {
+      const h = (v / top) * plot.h;
+      el("rect", { x: cx - barW / 2, y: plot.y0 + plot.h - h, width: barW, height: Math.max(1, h),
+                   fill: color, rx: Math.min(4, barW / 2) }, svg);
+    }
+    const hit = el("rect", { x: plot.x0 + band * idx, y: plot.y0, width: band, height: plot.h,
+                             fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      const r = host.getBoundingClientRect();
+      showTip(host, tip, ev.clientX - r.left, ev.clientY - r.top, tipNode(
+        labelDay(p.key, grain),
+        p.n ? [{ name: "Cost", color, value: v, text: fmt(v) },
+               { name: "Calls", value: p.n, text: fmtInt(p.n) }]
+            : [{ name: "No usage", value: 1, text: "—" }]));
+    });
+    hit.addEventListener("pointerleave", () => hideTip(tip));
+  });
+  xLabels(svg, plot, points, grain, band);
+}
+
+/* ------------------------------------------------------- line + crosshair */
+function lineChart(host, points, grain, valueOf, fmt) {
+  const { svg, tip, plot } = frame(host, 220, { l: 54, r: 12, t: 12, b: 30 });
+  if (!points.length) return;
+  const color = css("--series-1");
+  const vals = points.map(valueOf);
+  const max = Math.max(...vals, 0.000001);
+  const ticks = niceTicks(max, 3);
+  const top = axes(svg, plot, ticks, fmt);
+  const step = points.length > 1 ? plot.w / (points.length - 1) : 0;
+  const px = (i) => plot.x0 + (points.length > 1 ? step * i : plot.w / 2);
+  const py = (v) => plot.y0 + plot.h - (v / top) * plot.h;
+
+  let d = "", area = `M ${px(0)} ${plot.y0 + plot.h}`;
+  vals.forEach((v, i) => {
+    d += (i ? " L " : "M ") + px(i) + " " + py(v);
+    area += " L " + px(i) + " " + py(v);
+  });
+  area += ` L ${px(vals.length - 1)} ${plot.y0 + plot.h} Z`;
+  el("path", { d: area, fill: color, "fill-opacity": 0.1, stroke: "none" }, svg);
+  el("path", { d, fill: "none", stroke: color, "stroke-width": 2,
+               "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+
+  const lastIdx = vals.length - 1;
+  el("circle", { cx: px(lastIdx), cy: py(vals[lastIdx]), r: 4.5, fill: color,
+                 stroke: css("--surface-1"), "stroke-width": 2 }, svg);
+  const endLabel = el("text", { x: px(lastIdx) - 6, y: py(vals[lastIdx]) - 12, "text-anchor": "end",
+                                fill: css("--text-primary"), "font-size": 12, "font-weight": 600 }, svg);
+  endLabel.appendChild(text(fmt(vals[lastIdx])));
+
+  const rule = el("line", { y1: plot.y0, y2: plot.y0 + plot.h, stroke: css("--axis"),
+                            "stroke-width": 1, opacity: 0, "pointer-events": "none" }, svg);
+  const dot = el("circle", { r: 4.5, fill: color, stroke: css("--surface-1"),
+                             "stroke-width": 2, opacity: 0, "pointer-events": "none" }, svg);
+  const surface = el("rect", { x: plot.x0, y: plot.y0, width: plot.w, height: plot.h, fill: "transparent" }, svg);
+  surface.addEventListener("pointermove", (ev) => {
+    const r = host.getBoundingClientRect();
+    const scale = (host.clientWidth || 1) / (svg.viewBox.baseVal.width || 1);
+    const local = (ev.clientX - r.left) / scale;
+    const idx = Math.max(0, Math.min(points.length - 1, Math.round((local - plot.x0) / (step || 1))));
+    rule.setAttribute("x1", px(idx)); rule.setAttribute("x2", px(idx)); rule.setAttribute("opacity", 1);
+    dot.setAttribute("cx", px(idx)); dot.setAttribute("cy", py(vals[idx])); dot.setAttribute("opacity", 1);
+    showTip(host, tip, ev.clientX - r.left, ev.clientY - r.top, tipNode(
+      labelDay(points[idx].key, grain),
+      [{ name: "Cumulative", color, value: vals[idx], text: fmt(vals[idx]) }]));
+  });
+  surface.addEventListener("pointerleave", () => {
+    hideTip(tip); rule.setAttribute("opacity", 0); dot.setAttribute("opacity", 0);
+  });
+  xLabels(svg, plot, points, grain, step || plot.w);
+}
+
+/* ----------------------------------------------------------- sparkline */
+function sparkline(host, points, valueOf) {
+  const { svg, plot } = frame(host, 72, { l: 0, r: 2, t: 8, b: 8 });
+  if (points.length < 2) return;
+  const color = css("--series-1");
+  const vals = points.map(valueOf);
+  const max = Math.max(...vals, 0.000001);
+  const step = plot.w / (points.length - 1);
+  let d = "";
+  vals.forEach((v, i) => {
+    d += (i ? " L " : "M ") + (plot.x0 + step * i) + " " + (plot.y0 + plot.h - (v / max) * plot.h);
+  });
+  el("path", { d, fill: "none", stroke: color, "stroke-width": 2,
+               "stroke-linejoin": "round", "stroke-linecap": "round", opacity: 0.85 }, svg);
+}
+
+/* ----------------------------------------------------- horizontal bars */
+function barChart(host, items, totalTokens) {
+  const rowH = 34;
+  const height = Math.max(90, items.length * rowH + 16);
+  const { svg, tip, plot } = frame(host, height, { l: 0, r: 0, t: 8, b: 8 });
+  if (!items.length) return;
+  const color = css("--series-1");
+  const max = Math.max(...items.map((i) => i.tokens), 1);
+  const labelW = Math.min(190, Math.max(90, plot.w * 0.28));
+  const valueW = 76;
+  const trackW = Math.max(20, plot.w - labelW - valueW);
+
+  items.forEach((it, idx) => {
+    const y = plot.y0 + idx * rowH;
+    const name = el("text", { x: 0, y: y + 16, fill: css("--text-secondary"), "font-size": 12 }, svg);
+    name.appendChild(text(it.short));
+    const w = Math.max(2, (it.tokens / max) * trackW);
+    el("rect", { x: labelW, y: y + 5, width: w, height: 14, rx: 4, fill: color }, svg);
+    const val = el("text", { x: labelW + trackW + valueW - 4, y: y + 16, "text-anchor": "end",
+                             fill: css("--text-primary"), "font-size": 12 }, svg);
+    val.appendChild(text(fmtCompact(it.tokens)));
+    const hit = el("rect", { x: 0, y, width: Math.max(1, plot.w), height: rowH, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      const r = host.getBoundingClientRect();
+      showTip(host, tip, ev.clientX - r.left, ev.clientY - r.top, tipNode(it.key, [
+        { name: "Tokens", color, value: it.tokens, text: fmtInt(it.tokens) },
+        { name: "Share", value: 1, text: totalTokens ? ((it.tokens / totalTokens) * 100).toFixed(1) + "%" : "—" },
+        { name: "Cost", value: it.cost, text: fmtMoney(it.cost) },
+        { name: "Calls", value: it.calls, text: fmtInt(it.calls) },
+      ]));
+    });
+    hit.addEventListener("pointerleave", () => hideTip(tip));
+  });
+}
+
+/* ---------------------------------------------------------- hour chart */
+function hourChart(host, rows) {
+  const hours = Array.from({ length: 24 }, (_, h) => ({ h, tokens: 0, calls: 0, cost: 0 }));
+  for (const b of rows) {
+    const slot = hours[b.h];
+    slot.tokens += b.i + b.o + b.cw + b.cr;
+    slot.calls += b.n;
+    slot.cost += b.c;
+  }
+  const { svg, tip, plot } = frame(host, 190, { l: 54, r: 12, t: 12, b: 28 });
+  const color = css("--series-1");
+  const max = Math.max(...hours.map((h) => h.tokens), 1);
+  const top = axes(svg, plot, niceTicks(max, 3), fmtCompact);
+  const band = plot.w / 24;
+  const barW = Math.min(24, Math.max(3, band - 3));
+  hours.forEach((slot, idx) => {
+    const cx = plot.x0 + band * (idx + 0.5);
+    if (slot.tokens > 0) {
+      const h = (slot.tokens / top) * plot.h;
+      el("rect", { x: cx - barW / 2, y: plot.y0 + plot.h - h, width: barW,
+                   height: Math.max(1, h), rx: Math.min(4, barW / 2), fill: color }, svg);
+    }
+    const hourStride = plot.w < 300 ? 6 : plot.w < 520 ? 4 : 3;
+    if (idx % hourStride === 0) {
+      const t = el("text", { x: cx, y: plot.y0 + plot.h + 16, "text-anchor": "middle",
+                             fill: css("--muted"), "font-size": 11 }, svg);
+      t.appendChild(text(pad(idx) + ":00"));
+    }
+    const hit = el("rect", { x: plot.x0 + band * idx, y: plot.y0, width: band, height: plot.h,
+                             fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      const r = host.getBoundingClientRect();
+      showTip(host, tip, ev.clientX - r.left, ev.clientY - r.top, tipNode(pad(idx) + ":00–" + pad((idx + 1) % 24) + ":00", [
+        { name: "Tokens", color, value: slot.tokens, text: fmtInt(slot.tokens) },
+        { name: "Calls", value: slot.calls, text: fmtInt(slot.calls) },
+        { name: "Cost", value: slot.cost, text: fmtMoney(slot.cost) },
+      ]));
+    });
+    hit.addEventListener("pointerleave", () => hideTip(tip));
+  });
+}
+
+/* --------------------------------------------------------------- tables */
+function renderTable(node, columns, rows) {
+  node.textContent = "";
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const c of columns) {
+    const th = document.createElement("th");
+    th.appendChild(text(c.name));
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  node.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    columns.forEach((c) => {
+      const td = document.createElement("td");
+      if (c.dim) td.className = "dim";
+      if (c.trunc) td.classList.add("trunc");
+      td.appendChild(text(c.get(r)));
+      if (c.title) td.title = c.title(r);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
+  node.appendChild(tbody);
+}
+
+let dailyRowsCache = [];
+
+/* --------------------------------------------------------------- render */
+function render() {
+  const { from, to, rows } = slice(state.range);
+  const t = totals(rows);
+  const { grain, points } = timeSeries(rows, from, to);
+  const activeDays = new Set(rows.map((b) => b.d)).size;
+  const sessionIds = new Set(rows.map((b) => b.s));
+
+  /* comparison against the preceding window of equal length */
+  let delta = null;
+  if (state.range !== "all") {
+    const span = Number(state.range);
+    const prevTo = shiftDays(from, -1);
+    const prevFrom = shiftDays(prevTo, -(span - 1));
+    const prev = totals(DATA.buckets.filter((b) =>
+      b.d >= prevFrom && b.d <= prevTo &&
+      (state.model === "all" || b.m === state.model) &&
+      (state.project === "all" || b.p === state.project)));
+    if (prev.c > 0 || prev.tokens > 0) delta = { cost: prev.c, tokens: prev.tokens, span };
+  }
+
+  /* hero */
+  document.getElementById("hero-value").textContent = fmtMoney(t.c);
+  const heroMeta = [];
+  heroMeta.push(fmtInt(t.tokens) + " tokens across " + fmtInt(t.n) + " API calls");
+  if (delta && delta.cost > 0) {
+    const pct = ((t.c - delta.cost) / delta.cost) * 100;
+    heroMeta.push((pct >= 0 ? "+" : "") + pct.toFixed(0) + "% vs previous " + delta.span + " days");
+  }
+  document.getElementById("hero-meta").textContent = heroMeta.join(" · ");
+  sparkline(document.getElementById("hero-spark"), points, (p) => p.c);
+
+  /* tiles */
+  const busiest = points.slice().sort((a, b) => (b.i + b.o + b.cw + b.cr) - (a.i + a.o + a.cw + a.cr))[0];
+  const busiestTokens = busiest ? busiest.i + busiest.o + busiest.cw + busiest.cr : 0;
+  const cacheShare = t.cr + t.cw + t.i > 0 ? (t.cr / (t.cr + t.cw + t.i)) * 100 : 0;
+  const tiles = [
+    { label: "Total tokens", value: fmtCompact(t.tokens), meta: fmtInt(t.tokens) + " exact" },
+    { label: "Output tokens", value: fmtCompact(t.o), meta: fmtCompact(t.th) + " of it thinking" },
+    { label: "Cache reads", value: cacheShare.toFixed(0) + "%", meta: "of all input-side tokens" },
+    { label: "Active days", value: String(activeDays), meta: activeDays ? fmtCompact(t.tokens / activeDays) + " tokens/day" : "—" },
+    { label: "Sessions", value: String(sessionIds.size), meta: sessionIds.size ? fmtInt(t.n / sessionIds.size) + " calls each" : "—" },
+    { label: "Busiest " + grain, value: busiest ? fmtCompact(busiestTokens) : "—",
+      meta: busiest ? labelDay(busiest.key, grain) : "no activity" },
+  ];
+  const tileHost = document.getElementById("tiles");
+  tileHost.textContent = "";
+  for (const tile of tiles) {
+    const box = document.createElement("div");
+    box.className = "tile";
+    const l = document.createElement("div"); l.className = "label"; l.appendChild(text(tile.label));
+    const v = document.createElement("div"); v.className = "value"; v.appendChild(text(tile.value));
+    const m = document.createElement("div"); m.className = "meta"; m.appendChild(text(tile.meta));
+    box.append(l, v, m);
+    tileHost.appendChild(box);
+  }
+
+  /* legend */
+  const legend = document.getElementById("stack-legend");
+  legend.textContent = "";
+  SERIES.forEach((s) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "legend-btn";
+    const off = state.hidden.has(s.key);
+    btn.setAttribute("aria-pressed", String(!off));
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = off ? "transparent" : css(s.varname);
+    sw.style.boxShadow = "inset 0 0 0 1.5px " + css(s.varname);
+    btn.appendChild(sw);
+    btn.appendChild(text(s.name + " " + fmtCompact(t[s.key])));
+    btn.addEventListener("click", () => {
+      if (off) state.hidden.delete(s.key);
+      else if (state.hidden.size < SERIES.length - 1) state.hidden.add(s.key);
+      render();
+    });
+    li.appendChild(btn);
+    legend.appendChild(li);
+  });
+  document.getElementById("stack-note").textContent =
+    "Stacked by token type, one column per " + grain + " · click a series to hide it · " +
+    labelDay(points[0] ? points[0].key : from, grain) + " → " +
+    labelDay(points.length ? points[points.length - 1].key : to, grain);
+
+  /* charts */
+  stackedChart(document.getElementById("stack"), points, grain);
+  columnChart(document.getElementById("costbars"), points, grain, (p) => p.c, fmtMoney);
+  let run = 0;
+  const cum = points.map((p) => ({ key: p.key, c: (run += p.c) }));
+  lineChart(document.getElementById("cumulative"), cum, grain, (p) => p.c, fmtMoney);
+
+  const models = groupBy(rows, "m").map((g) => ({ ...g, short: g.key.replace(/^claude-/, "") }));
+  barChart(document.getElementById("bymodel"), models.slice(0, 8), t.tokens);
+  const projects = groupBy(rows, "p").map((g) => ({ ...g, short: g.key.split("/").filter(Boolean).pop() || g.key }));
+  barChart(document.getElementById("byproject"), projects.slice(0, 8), t.tokens);
+  hourChart(document.getElementById("byhour"), rows);
+
+  /* daily table */
+  const perDay = new Map();
+  for (const b of rows) {
+    let d = perDay.get(b.d);
+    if (!d) perDay.set(b.d, (d = { d: b.d, n: 0, i: 0, o: 0, cw: 0, cr: 0, c: 0 }));
+    d.n += b.n; d.i += b.i; d.o += b.o; d.cw += b.cw; d.cr += b.cr; d.c += b.c;
+  }
+  dailyRowsCache = [...perDay.values()].sort((a, b) => (a.d < b.d ? 1 : -1));
+  renderTable(document.getElementById("daily"), [
+    { name: "Date", get: (r) => r.d },
+    { name: "Calls", get: (r) => fmtInt(r.n), dim: true },
+    { name: "Input", get: (r) => fmtInt(r.i) },
+    { name: "Output", get: (r) => fmtInt(r.o) },
+    { name: "Cache write", get: (r) => fmtInt(r.cw) },
+    { name: "Cache read", get: (r) => fmtInt(r.cr) },
+    { name: "Total", get: (r) => fmtInt(r.i + r.o + r.cw + r.cr) },
+    { name: "Cost", get: (r) => fmtMoney(r.c) },
+  ], dailyRowsCache);
+
+  /* sessions table */
+  const perSession = new Map();
+  for (const b of rows) {
+    let s = perSession.get(b.s);
+    if (!s) perSession.set(b.s, (s = { id: b.s, p: b.p, n: 0, tokens: 0, c: 0, models: new Set() }));
+    s.n += b.n; s.tokens += b.i + b.o + b.cw + b.cr; s.c += b.c; s.models.add(b.m);
+  }
+  const meta = new Map(DATA.sessions.map((s) => [s.id, s]));
+  const sessionRows = [...perSession.values()].map((s) => ({
+    ...s,
+    start: (meta.get(s.id) || {}).start || "",
+    end: (meta.get(s.id) || {}).end || "",
+  })).sort((a, b) => (a.start < b.start ? 1 : -1));
+  renderTable(document.getElementById("sessions"), [
+    { name: "Started", get: (r) => (r.start || "").replace("T", " ").slice(0, 16) },
+    { name: "Project", get: (r) => r.p.split("/").filter(Boolean).pop() || r.p, title: (r) => r.p, trunc: true, dim: true },
+    { name: "Session", get: (r) => r.id.slice(0, 8), title: (r) => r.id, dim: true },
+    { name: "Models", get: (r) => [...r.models].map((m) => m.replace(/^claude-/, "")).join(", "), dim: true },
+    { name: "Calls", get: (r) => fmtInt(r.n) },
+    { name: "Tokens", get: (r) => fmtInt(r.tokens) },
+    { name: "Cost", get: (r) => fmtMoney(r.c) },
+  ], sessionRows);
+
+  if (!rows.length) {
+    document.getElementById("stack-note").textContent = "No usage in the selected range.";
+  }
+}
+
+/* ----------------------------------------------------------- chrome wiring */
+function buildControls() {
+  const rangeHost = document.getElementById("ranges");
+  const spanDays = Math.round((parseDay(lastDay) - parseDay(firstDay)) / 86400000) + 1;
+  for (const r of RANGES) {
+    if (r.id !== "all" && Number(r.id) > spanDays + 30 && r.id !== "7") continue;
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.type = "button";
+    b.textContent = r.label;
+    b.setAttribute("aria-pressed", String(state.range === r.id));
+    b.addEventListener("click", () => {
+      state.range = r.id;
+      rangeHost.querySelectorAll("button").forEach((n) => n.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+      render();
+    });
+    rangeHost.appendChild(b);
+  }
+  if (!rangeHost.querySelector('[aria-pressed="true"]')) {
+    const last = rangeHost.lastElementChild;
+    if (last) { last.setAttribute("aria-pressed", "true"); state.range = "all"; }
+  }
+
+  const fill = (node, values, label, key) => {
+    const any = document.createElement("option");
+    any.value = "all";
+    any.textContent = "All " + label;
+    node.appendChild(any);
+    for (const v of values) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = key === "p" ? (v.split("/").filter(Boolean).pop() || v) : v.replace(/^claude-/, "");
+      o.title = v;
+      node.appendChild(o);
+    }
+    node.addEventListener("change", () => { state[key === "p" ? "project" : "model"] = node.value; render(); });
+  };
+  fill(document.getElementById("model"), DATA.models, "models", "m");
+  fill(document.getElementById("project"), DATA.projects, "projects", "p");
+
+  const themeBtn = document.getElementById("theme");
+  const apply = (mode) => {
+    document.documentElement.setAttribute("data-theme", mode);
+    themeBtn.textContent = mode === "dark" ? "Light" : "Dark";
+    render();
+  };
+  const stored = (() => { try { return localStorage.getItem("cc-usage-theme"); } catch (e) { return null; } })();
+  const initial = stored || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  apply(initial);
+  themeBtn.addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    try { localStorage.setItem("cc-usage-theme", next); } catch (e) { /* private mode */ }
+    apply(next);
+  });
+
+  document.getElementById("copy").addEventListener("click", async (ev) => {
+    const head = ["date", "calls", "input", "output", "cache_write", "cache_read", "total", "cost_usd"];
+    const body = dailyRowsCache.map((r) =>
+      [r.d, r.n, r.i, r.o, r.cw, r.cr, r.i + r.o + r.cw + r.cr, r.c.toFixed(4)].join("\t"));
+    const tsv = [head.join("\t"), ...body].join("\n");
+    try {
+      await navigator.clipboard.writeText(tsv);
+      ev.target.textContent = "Copied";
+      setTimeout(() => { ev.target.textContent = "Copy TSV"; }, 1400);
+    } catch (e) {
+      ev.target.textContent = "Copy blocked";
+      setTimeout(() => { ev.target.textContent = "Copy TSV"; }, 1400);
+    }
+  });
+
+  document.getElementById("meta").textContent =
+    firstDay + " → " + lastDay + " · " + fmtInt(DATA.messages) + " API calls · " +
+    DATA.files + " transcript file(s) · times in " + DATA.tz;
+
+  const foot = document.getElementById("footnote");
+  const notes = [
+    "Costs are estimates: token counts come from each assistant message's usage block in " + DATA.source +
+    ", priced with the rates in pricing.json. If your usage is covered by a Claude subscription, " +
+    "this is what the same tokens would have cost on the API, not a bill.",
+    "Cache writes are charged at 1.25× (5-minute TTL) or 2× (1-hour TTL) the input rate; cache reads at 0.1×.",
+    "Regenerate with: python3 claude_usage.py --open",
+  ];
+  if (DATA.unpriced && DATA.unpriced.length) {
+    notes.splice(1, 0, "No rates found for " + DATA.unpriced.join(", ") + " — counted as $0. Add them to pricing.json.");
+  }
+  notes.forEach((n) => {
+    const p = document.createElement("p");
+    p.style.margin = "0 0 6px";
+    p.appendChild(text(n));
+    foot.appendChild(p);
+  });
+  foot.appendChild(text("Generated " + DATA.generated.replace("T", " ")));
+}
+
+let resizeTimer;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 150);
+});
+
+buildControls();
+</script>
+</body>
+</html>
