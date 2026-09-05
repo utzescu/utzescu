@@ -1011,6 +1011,22 @@ function renderSources(host) {
     desc.appendChild(text(entry.description + " · module " + entry.module));
   }
 
+  if ((DATA.devices || []).length) {
+    const box = card(host, "Devices", "Each device builds from its own data and writes a snapshot " +
+                                      "into the shared folder; the dashboard merges them.", true);
+    for (const d of DATA.devices) {
+      const row = div("source-row", box);
+      const name = div("name", row);
+      name.appendChild(text(d.device));
+      const state = div("state", row);
+      if (d.device === DATA.device) { state.classList.add("on"); state.appendChild(text("this device")); }
+      else { state.classList.add("off"); state.appendChild(text("synced")); }
+      const desc = div("desc", row);
+      desc.appendChild(text(fmtInt(d.rows) + " rows · " + (d.reports || []).join(", ") +
+                            (d.generated ? " · last built " + d.generated.replace("T", " ") : "")));
+    }
+  }
+
   if ((DATA.problems || []).length) {
     const box2 = card(host, "Warnings from this build", "", true);
     for (const problem of DATA.problems) {
@@ -1091,9 +1107,11 @@ function boot() {
   document.title = DATA.title;
   document.getElementById("doc-title").textContent = DATA.title;
   const counts = DATA.reports.map((r) => r.rows.length).reduce((a, b) => a + b, 0);
+  const devices = (DATA.devices || []).length;
   document.getElementById("meta").textContent =
-    DATA.reports.length + " report(s) · " + fmtInt(counts) + " aggregated rows · built " +
-    DATA.generated.replace("T", " ");
+    DATA.reports.length + " report(s) · " + fmtInt(counts) + " aggregated rows · " +
+    (devices > 1 ? devices + " devices · " : "") + "built " + DATA.generated.replace("T", " ") +
+    (DATA.device ? " on " + DATA.device : "");
 
   const tabs = document.getElementById("tabs");
   const add = (id, label) => {

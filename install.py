@@ -16,6 +16,7 @@ itself is never touched by uninstall.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import plistlib
 import subprocess
@@ -26,10 +27,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dashkit import build as builder  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent
+SOURCE_ROOT = Path(__file__).resolve().parent
+ROOT = SOURCE_ROOT           # where the installed copy lives; --install-to changes it
 PYTHON = sys.executable or "python3"
-BUILDER = ROOT / "dashboard.py"
 MARKER = "# dashkit-dashboard"
+PAYLOAD = ["dashboard.py", "install.py", "pricing.json", "README.md",
+           "Install-Dashboard.cmd", "dashkit"]
 LAUNCH_LABEL = "com.dashkit.dashboard"
 TASK_NAME = "DashkitDashboard"
 
@@ -43,6 +46,49 @@ def run(args, **kwargs):
 
 
 # --------------------------------------------------------------------- paths
+
+def builder_path():
+    return ROOT / "dashboard.py"
+
+
+def quiet_python():
+    """pythonw runs the refresh without flashing a console window."""
+    if sys.platform != "win32":
+        return PYTHON
+    candidate = Path(PYTHON).with_name("pythonw.exe")
+    return str(candidate) if candidate.exists() else PYTHON
+
+
+def copy_payload(target, warn=print):
+    """Copy the toolkit into `target` (a synced folder, a USB stick, anywhere).
+
+    dashboard.config.json is never overwritten - that file holds the user's
+    choices and, in a shared folder, the other devices' settings."""
+    import shutil
+    target = Path(target).expanduser()
+    target.mkdir(parents=True, exist_ok=True)
+    for name in PAYLOAD:
+        src = SOURCE_ROOT / name
+        if not src.exists():
+            continue
+        dst = target / name
+        if src.is_dir():
+            shutil.copytree(src, dst, dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        else:
+            shutil.copy2(src, dst)
+    config = target / "dashboard.config.json"
+    if not config.exists():
+        shutil.copy2(SOURCE_ROOT / "dashboard.config.json", config)
+        # A copied config must not point back at the machine it came from.
+        text = json.loads(config.read_text(encoding="utf-8"))
+        text["output"] = "dashboard.html"
+        text["data_dir"] = "data"
+        config.write_text(json.dumps(text, indent=2) + "\n", encoding="utf-8")
+    else:
+        warn(f"kept existing {config}")
+    return target
+
 
 def desktop_dir():
     home = Path.home()
@@ -62,9 +108,13 @@ def desktop_dir():
     return home / "Desktop"
 
 
+DESKTOP_OVERRIDE = None
+
+
 def shortcut_path(name):
     ext = {"win32": ".url", "darwin": ".webloc"}.get(sys.platform, ".desktop")
-    return desktop_dir() / (name + ext)
+    base = Path(DESKTOP_OVERRIDE).expanduser() if DESKTOP_OVERRIDE else desktop_dir()
+    return base / (name + ext)
 
 
 # ----------------------------------------------------------------- shortcut
@@ -92,8 +142,9 @@ def write_shortcut(target_html, name):
 
 def remove_shortcut(name):
     removed = []
+    base = Path(DESKTOP_OVERRIDE).expanduser() if DESKTOP_OVERRIDE else desktop_dir()
     for ext in (".url", ".webloc", ".desktop"):
-        candidate = desktop_dir() / (name + ext)
+        candidate = base / (name + ext)
         if candidate.exists():
             candidate.unlink()
             removed.append(candidate)
@@ -103,7 +154,40 @@ def remove_shortcut(name):
 # ----------------------------------------------------------------- schedule
 
 def _command(config_path):
-    return f'"{PYTHON}" "{BUILDER}" --config "{config_path}" --quiet'
+    return f'"{PYTHON}" "{builder_path()}" --config "{config_path}" --quiet'
+
+
+def write_refresh_script(config_path):
+    """A double-clickable refresh, and the thing the scheduler runs on Windows.
+
+    Written against the script's own folder wherever possible, so a copy sitting
+    in a synced folder keeps working on a device that mounts it on another drive
+    letter or path."""
+    config_path = Path(config_path)
+    try:
+        local_config = config_path.resolve().relative_to(Path(ROOT).resolve())
+    except ValueError:
+        local_config = None
+
+    if sys.platform == "win32":
+        path = Path(ROOT) / "refresh.cmd"
+        config_arg = f'%~dp0{local_config}' if local_config else str(config_path)
+        path.write_bytes((
+            "@echo off\r\n"
+            "rem Rebuilds the dashboard. Double-click any time; the scheduler runs it too.\r\n"
+            'cd /d "%~dp0"\r\n'
+            f'"{quiet_python()}" "%~dp0dashboard.py" --config "{config_arg}" --quiet\r\n'
+        ).encode("utf-8"))
+    else:
+        path = Path(ROOT) / "refresh.sh"
+        config_arg = f'"$(dirname "$0")/{local_config}"' if local_config else f'"{config_path}"'
+        path.write_text(
+            "#!/bin/sh\n# Rebuilds the dashboard. Run it any time; the scheduler runs it too.\n"
+            'cd "$(dirname "$0")" || exit 1\n'
+            f'"{PYTHON}" "$(dirname "$0")/dashboard.py" --config {config_arg} --quiet\n',
+            encoding="utf-8")
+        path.chmod(0o755)
+    return path
 
 
 def has_crontab():
@@ -124,6 +208,7 @@ def _crontab_write(text):
 
 
 def schedule_cron(config_path, hours):
+    write_refresh_script(config_path)
     lines = [ln for ln in _crontab_read().splitlines() if MARKER not in ln]
     lines.append(f"0 */{hours} * * * cd {ROOT} && {_command(config_path)} {MARKER}")
     _crontab_write("\n".join(lines).strip() + "\n")
@@ -224,9 +309,9 @@ def unschedule_launchd():
 
 
 def schedule_task(config_path, hours):
-    command = f'{_command(config_path)}'
+    script = write_refresh_script(config_path)
     args = ["schtasks", "/create", "/f", "/tn", TASK_NAME, "/sc", "hourly",
-            "/mo", str(hours), "/tr", command]
+            "/mo", str(hours), "/tr", f'"{script}"']
     out = run(args)
     if out is None:
         raise RuntimeError("schtasks is not available")
@@ -285,16 +370,35 @@ def main(argv=None):
                     help="refresh interval in hours (default: 6)")
     ap.add_argument("--no-schedule", action="store_true", help="skip the refresh schedule")
     ap.add_argument("--no-shortcut", action="store_true", help="skip the desktop shortcut")
+    ap.add_argument("--install-to", type=Path, metavar="DIR",
+                    help="copy the toolkit into DIR first and install from there "
+                         "(e.g. a Google Drive folder shared between devices)")
+    ap.add_argument("--desktop", type=Path, metavar="DIR",
+                    help="where to put the shortcut (default: this account's desktop)")
     ap.add_argument("--status", action="store_true", help="report what is installed")
     ap.add_argument("--uninstall", action="store_true", help="remove shortcut and schedule")
     args = ap.parse_args(argv)
 
+    global ROOT, DESKTOP_OVERRIDE
+    DESKTOP_OVERRIDE = args.desktop
     config_path = Path(args.config).expanduser().resolve()
+
+    if args.install_to:
+        # --status / --uninstall only need to look at the folder, not re-copy it
+        target = (Path(args.install_to).expanduser() if (args.status or args.uninstall)
+                  else copy_payload(args.install_to))
+        ROOT = target.resolve()
+        # after a copy, the config that matters is the one in the target folder
+        if args.config == builder.DEFAULT_CONFIG:
+            config_path = (ROOT / "dashboard.config.json").resolve()
+        print(f"files      {ROOT}")
     config = builder.load_config(config_path)
-    out_path = Path(config["output"]).expanduser()
+    out_path = Path(config["_output_path"])
 
     if args.status:
+        print(f"files      {ROOT}")
         print(f"config     {config_path}")
+        print(f"device     {builder.device_name(config)}")
         print(f"dashboard  {out_path}" + ("" if out_path.exists() else "  (not built yet)"))
         found = [p for p in (shortcut_path(args.name),) if p.exists()]
         print(f"shortcut   {found[0] if found else 'none on ' + str(desktop_dir())}")
@@ -320,6 +424,9 @@ def main(argv=None):
         return 1
     written = builder.render(data, out_path)
     print(f"built      {written}  ({builder.summarize(data)})")
+    print(f"device     {config['_device']}" +
+          (f"  (merging {len(data['devices'])} devices)" if len(data.get("devices") or []) > 1 else ""))
+    print(f"refresh    {write_refresh_script(config_path)}")
 
     if not args.no_shortcut:
         try:

@@ -12,11 +12,47 @@ python3 install.py       # build it, put a "Dashboard" shortcut on your desktop,
 Everything is Python 3.9+ standard library and one self-contained HTML file — no
 packages to install, no network calls, no data leaving the machine.
 
-## Install
+## Install on Windows, with the files in Google Drive
+
+Put the toolkit in a synced folder and every device you run it on adds to the
+same dashboard:
+
+```
+python install.py --install-to "G:\My Drive\Claude_Drive\Claude\Dashboard"
+```
+
+That copies everything into `...\Claude\Dashboard`, builds
+`dashboard.html` there, puts a **Dashboard** shortcut on your desktop
+(`C:\Users\<you>\Desktop\Dashboard.url`), writes a `refresh.cmd` you can
+double-click any time, and registers a Scheduled Task that rebuilds every 6
+hours. Add `--desktop "C:\Users\radu\Desktop"` if your desktop lives
+somewhere unusual (a OneDrive-redirected Desktop, for instance).
+
+On the **next device**, once Drive has synced the folder: open it and
+double-click **Install-Dashboard.cmd**. Same build, that device's own desktop
+shortcut, that device's own 6-hourly task.
+
+### What "across devices" means here
+
+Each device reads its own local data — your Claude transcripts live in
+`%USERPROFILE%\.claude\projects`, not in Drive — and writes a snapshot of what
+it collected to `data\<device-name>\` inside the shared folder. Every build
+merges every device's snapshot, so the dashboard shows all machines at once with
+a **Device** filter, a "By device" chart, and a device list on the Sources tab.
+A device that is switched off keeps contributing its last snapshot instead of
+disappearing from the history.
+
+Nothing is uploaded anywhere: Drive is only a folder to both machines. Paths in
+the config are relative to the config file, and `refresh.cmd` resolves paths
+from its own location, so a different drive letter on another device is fine.
+
+## Install (any platform)
 
 | Command | What it does |
 |---|---|
 | `python3 install.py` | build + desktop shortcut + 6-hourly refresh |
+| `python3 install.py --install-to DIR` | copy the toolkit to DIR (Drive, a share, a stick) and install from there |
+| `python3 install.py --desktop DIR` | put the shortcut somewhere other than the detected desktop |
 | `python3 install.py --interval 12` | refresh every 12 hours instead |
 | `python3 install.py --no-schedule` | build + shortcut only |
 | `python3 install.py --status` | where the dashboard, shortcut and schedule are |
@@ -30,8 +66,10 @@ crontab entry on Linux (a systemd user timer where cron is absent), a launchd
 agent on macOS, and a Scheduled Task on Windows. Re-running the installer
 replaces the existing entry rather than stacking a second one.
 
-The dashboard is written to `~/Dashboard/dashboard.html` by default — change
-`output` in `dashboard.config.json` to put it elsewhere.
+The dashboard is written to `~/Dashboard/dashboard.html` by default; after
+`--install-to`, it is `dashboard.html` inside that folder. Change `output` in
+`dashboard.config.json` to put it elsewhere — a relative path is taken relative
+to the config file.
 
 ## Configuration
 
@@ -40,7 +78,9 @@ The dashboard is written to `~/Dashboard/dashboard.html` by default — change
 ```json
 {
   "title": "Dashboard",
-  "output": "~/Dashboard/dashboard.html",
+  "output": "dashboard.html",
+  "data_dir": "data",
+  "device": null,
   "sources": [
     {"module": "claude_tokens", "enabled": true,
      "options": {"dir": "~/.claude/projects", "tz": "local"}},
@@ -50,7 +90,9 @@ The dashboard is written to `~/Dashboard/dashboard.html` by default — change
 }
 ```
 
-Each enabled source becomes a tab. A source that finds nothing is skipped with a
+`device` names this machine in the Device filter (default: its hostname), and
+`data_dir` is where per-device snapshots are kept — set it to `null` to keep the
+dashboard single-machine. Each enabled source becomes a tab. A source that finds nothing is skipped with a
 warning shown on the dashboard's **Sources** tab, so one broken source never
 takes the dashboard down with it.
 
@@ -131,6 +173,9 @@ The pieces:
 | `dashboard.py` | build the dashboard |
 | `install.py` | build + desktop shortcut + refresh schedule |
 | `dashboard.config.json` | which sources run, with what options, and where the HTML goes |
+| `Install-Dashboard.cmd` | double-click setup for a Windows device, from inside the shared folder |
+| `refresh.cmd` / `refresh.sh` | written at install time; rebuilds on demand and on schedule |
+| `data/<device>/` | each device's snapshot of what it collected |
 | `dashkit/spec.py` | the builders a source uses to describe its report |
 | `dashkit/build.py` | runs the sources and fills the template |
 | `dashkit/sources/` | the data sources |

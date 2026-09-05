@@ -1,3 +1,6 @@
 dashboard.html
 *.pyc
 __pycache__/
+data/
+refresh.sh
+refresh.cmd

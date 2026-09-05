@@ -50,11 +50,13 @@ def main(argv=None):
             print("  " + problem, file=sys.stderr)
         return 1
 
-    out = builder.render(data, args.out or config["output"])
+    out = builder.render(data, args.out or config["_output_path"])
     if args.json:
         Path(args.json).write_text(json.dumps(data, indent=2), encoding="utf-8")
     if not args.quiet:
         print(builder.summarize(data))
+        if len(data.get("devices") or []) > 1:
+            print("devices: " + ", ".join(d["device"] for d in data["devices"]))
         print(f"wrote {out}")
     if args.open:
         webbrowser.open(out.resolve().as_uri())
