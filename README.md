@@ -1,79 +1,138 @@
-# Claude Code token usage dashboard
+# Dashboard
 
-A single command turns the JSONL transcripts Claude Code writes under
-`~/.claude/projects/` into a self-contained HTML dashboard: tokens over time,
-estimated cost, and historical statistics per day, model, project and session.
+One locally built HTML dashboard with a tab per data source. Token usage from
+Claude Code is the first source; git activity is the second; adding a third is a
+single Python file.
 
 ```bash
-python3 claude_usage.py --open
+python3 install.py       # build it, put a "Dashboard" shortcut on your desktop,
+                         # and refresh it every 6 hours
 ```
 
-That writes `usage-report.html` in the current directory and opens it. No
-dependencies (Python 3.9+ standard library only), no network calls — the report
-embeds its own data and charts, so it works offline and can be mailed or
-archived as a single file.
+Everything is Python 3.9+ standard library and one self-contained HTML file — no
+packages to install, no network calls, no data leaving the machine.
 
-## What the report shows
+## Install
 
-- **Estimated spend** as the headline figure, with a sparkline of daily cost.
-- **Tokens over time** — stacked columns of input / output / cache write /
-  cache read. Cache reads normally dwarf everything else, so click a series in
-  the legend to hide it. Buckets switch from days to weeks to months
-  automatically as the range grows.
-- **Cost per period** and **cumulative cost** (two charts, one scale each).
-- **By model** and **by project** totals, **time-of-day** distribution.
-- **Daily detail** and **sessions** tables — every number in the charts, in
-  full, plus a "Copy TSV" button for pasting into a spreadsheet.
-- Filters for date range, model and project scope the whole page at once.
-  Light/dark follows the OS and has a manual toggle.
+| Command | What it does |
+|---|---|
+| `python3 install.py` | build + desktop shortcut + 6-hourly refresh |
+| `python3 install.py --interval 12` | refresh every 12 hours instead |
+| `python3 install.py --no-schedule` | build + shortcut only |
+| `python3 install.py --status` | where the dashboard, shortcut and schedule are |
+| `python3 install.py --uninstall` | remove the shortcut and the schedule (keeps the HTML) |
+| `python3 dashboard.py --open` | rebuild by hand and open it |
+| `python3 dashboard.py --list` | list the data sources available |
 
-## Options
+The shortcut is called **Dashboard** and lands on your desktop: a `.desktop`
+link on Linux, a `.webloc` on macOS, a `.url` on Windows. The refresh is a
+crontab entry on Linux (a systemd user timer where cron is absent), a launchd
+agent on macOS, and a Scheduled Task on Windows. Re-running the installer
+replaces the existing entry rather than stacking a second one.
 
+The dashboard is written to `~/Dashboard/dashboard.html` by default — change
+`output` in `dashboard.config.json` to put it elsewhere.
+
+## Configuration
+
+`dashboard.config.json` lists the sources to build and their options:
+
+```json
+{
+  "title": "Dashboard",
+  "output": "~/Dashboard/dashboard.html",
+  "sources": [
+    {"module": "claude_tokens", "enabled": true,
+     "options": {"dir": "~/.claude/projects", "tz": "local"}},
+    {"module": "git_activity", "enabled": true,
+     "options": {"repos": ["~/code"], "since_days": 365}}
+  ]
+}
 ```
---dir PATH        transcript directory (default: ~/.claude/projects)
--o, --out PATH    HTML file to write (default: usage-report.html)
---json PATH       also dump the aggregate as JSON
---tz NAME         local | utc | IANA zone, e.g. Europe/Bucharest (default: local)
---pricing PATH    rate table to use (default: pricing.json)
---template PATH   HTML template to fill (default: report_template.html)
---open            open the report when it is written
--q, --quiet       no stdout summary
+
+Each enabled source becomes a tab. A source that finds nothing is skipped with a
+warning shown on the dashboard's **Sources** tab, so one broken source never
+takes the dashboard down with it.
+
+## Sources that ship
+
+**Token usage** (`claude_tokens`) — Claude Code API tokens and estimated spend,
+from the JSONL transcripts under `~/.claude/projects/`. Estimated spend as the
+headline, then tokens over time stacked by type (input / output / cache write /
+cache read — click a series to hide it), cost per period, cumulative cost,
+totals by model and project, time of day, and full daily and session tables.
+
+Counting: every `assistant` record carries the API's `usage` block. Records are
+de-duplicated on `message.id` + `requestId`, because streaming writes the same
+assistant message to the transcript several times and counting those twice
+inflates every number. Cache writes are split by 5-minute and 1-hour TTL where
+the transcript records it.
+
+Costs are estimates from `pricing.json` — Anthropic first-party rates in USD per
+million tokens, cached 2026-06-24. Cache writes bill at 1.25× (5m TTL) or 2×
+(1h TTL) the input rate, cache reads at 0.1× (0.025× on Claude Fable 5.1). Edit
+that file to change a rate or add a model; unknown models count as $0 and are
+named on the dashboard. If your usage is covered by a subscription, the figure
+is what the same tokens would have cost on the API, not a bill.
+
+**Git activity** (`git_activity`) — commits, insertions and deletions across
+local repositories, by repo, author, day and hour. Point `repos` at individual
+repositories or at a directory containing them (`depth` controls how deep the
+search goes). Disabled by default.
+
+## Adding a data source
+
+A source is one file in `dashkit/sources/` exposing `collect(options, warn)`
+that returns rows plus a description of the panels to draw from them. The
+renderer knows nothing about tokens or commits — only dimensions, measures and
+panel types — so you never write chart code:
+
+```python
+from .. import spec
+
+TITLE = "Downloads"
+DESCRIPTION = "Files landing in ~/Downloads"
+
+def collect(options, warn):
+    rows = [{"d": "2026-09-04", "h": 14, "kind": "pdf", "n": 3, "bytes": 91234}, ...]
+    return spec.report(
+        id="downloads", title=TITLE, rows=rows, date_field="d", hour_field="h",
+        dimensions=[spec.dimension("kind", "Type")],
+        measures={"files": spec.measure("Files", "n"),
+                  "bytes": spec.measure("Bytes", "bytes", format="compact")},
+        panels=[
+            spec.hero("files", label="Files saved", meta=["{bytes} on disk"]),
+            spec.timeseries(title="Over time", mode="bars", measure="files"),
+            spec.category(title="By type", dimension="kind", measure="files"),
+        ],
+    )
 ```
 
-Regenerate whenever you want a fresh view; add it to a cron job or a shell
-alias if you want it kept up to date.
+Drop the file in, add `{"module": "downloads", "enabled": true}` to the config,
+rebuild. It gets its own tab, the date-range and dimension filters, hover
+tooltips, light and dark themes, and the table view for free.
 
-## How usage is counted
+The pieces:
 
-Every `assistant` record in a transcript carries a `usage` block from the API
-response. The script reads `input_tokens`, `output_tokens`,
-`cache_creation_input_tokens` (split by 5-minute / 1-hour TTL when present),
-`cache_read_input_tokens` and the thinking-token detail, and de-duplicates on
-`message.id` + `requestId` — streaming writes the same assistant message to the
-transcript more than once, and counting those twice would inflate every number.
-
-Records are bucketed by local day, hour, project (`cwd`), session and model.
-Subagent (sidechain) calls are included: they cost tokens too.
-
-## Costs are estimates
-
-Prices come from `pricing.json` — Anthropic first-party API rates in USD per
-million tokens, cached 2026-06-24. Cache writes bill at 1.25× the input rate on
-the 5-minute TTL and 2× on the 1-hour TTL; cache reads at 0.1× (0.025× on
-Claude Fable 5.1). Edit the file to change rates or add a model; unknown models
-are counted as $0 and named in a warning and in the report footer.
-
-If your Claude Code usage is covered by a subscription, the figure is what the
-same tokens would have cost on the API — not a bill.
+- **rows** — a flat table. Every row needs `date_field` (`YYYY-MM-DD`);
+  `hour_field` (0–23) unlocks the time-of-day panel.
+- **dimensions** — the columns you want to filter and group by.
+- **measures** — named sums over row fields (`spec.measure`), or derived values
+  (`spec.ratio`, `spec.per_day`). Formats: `int`, `compact`, `money`, `percent`.
+- **panels** — `hero`, `tiles`, `timeseries` (`stacked` / `bars` / `cumulative`),
+  `category`, `hourly`, `table`, in the order you want them laid out.
+- Context measures the renderer computes itself: `@days` (active days),
+  `@dim:<field>` (distinct values), `@peak:<measure>` and `@peak_label:<measure>`.
 
 ## Files
 
-| File | Purpose |
+| Path | Purpose |
 |---|---|
-| `claude_usage.py` | scans transcripts, aggregates, fills the template |
-| `report_template.html` | the dashboard: styles, charts, interaction |
-| `pricing.json` | per-model rates, editable |
-
-The template is filled by replacing the single `/*__USAGE_DATA__*/null` token
-with the aggregate JSON, so you can restyle the report without touching the
-Python, and open the template directly to see its structure.
+| `dashboard.py` | build the dashboard |
+| `install.py` | build + desktop shortcut + refresh schedule |
+| `dashboard.config.json` | which sources run, with what options, and where the HTML goes |
+| `dashkit/spec.py` | the builders a source uses to describe its report |
+| `dashkit/build.py` | runs the sources and fills the template |
+| `dashkit/sources/` | the data sources |
+| `dashkit/shell_template.html` | tabs, charts, filters, tables — the whole GUI |
+| `pricing.json` | per-model token rates, editable |

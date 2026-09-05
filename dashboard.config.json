@@ -1,0 +1,24 @@
+{
+  "title": "Dashboard",
+  "output": "~/Dashboard/dashboard.html",
+  "sources": [
+    {
+      "module": "claude_tokens",
+      "enabled": true,
+      "options": {
+        "dir": "~/.claude/projects",
+        "tz": "local"
+      }
+    },
+    {
+      "module": "git_activity",
+      "enabled": false,
+      "options": {
+        "repos": ["~/code", "~/projects"],
+        "depth": 2,
+        "since_days": 365,
+        "mine_only": false
+      }
+    }
+  ]
+}
